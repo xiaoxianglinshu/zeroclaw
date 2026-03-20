@@ -1,4 +1,4 @@
-name: Android Termux Build (32-bit)
+name: Android Termux Build (32-bit Stable)
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
       # 1. 拉代码
       - uses: actions/checkout@v4
 
-      # 2. 安装 Rust + target
+      # 2. 安装 Rust
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: armv7-linux-androideabi
@@ -28,20 +28,20 @@ jobs:
       # 3. 缓存
       - uses: Swatinem/rust-cache@v2
 
-      # 4. 安装基础工具
+      # 4. 安装依赖
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y unzip wget
 
-      # 5. 下载 NDK
+      # 5. 下载 Android NDK
       - name: Install Android NDK
         run: |
           wget -q https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
           unzip -q android-ndk-r26d-linux.zip
           echo "NDK_HOME=$PWD/android-ndk-r26d" >> $GITHUB_ENV
 
-      # 6. 配置所有 Android 工具链（🔥关键）
+      # 6. 配置 Android 工具链（🔥核心）
       - name: Setup Android toolchain
         run: |
           TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
@@ -54,26 +54,33 @@ jobs:
 
           echo "CFLAGS_armv7_linux_androideabi=--sysroot=$TOOLCHAIN/sysroot" >> $GITHUB_ENV
 
-      # 7. 避免 openssl 问题
+      # 7. 避免 OpenSSL 问题
       - name: Use vendored OpenSSL
         run: |
           echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
 
-      # 8. 编译（⚠️ 去掉 postgres）
-      - name: Build release
+      # 8. ⭐ 关键：禁用 matrix（否则必炸）
+      - name: Build release (stable minimal)
         run: |
           cargo build --release \
             --target armv7-linux-androideabi \
-            --features channel-matrix,channel-lark
+            --no-default-features \
+            --features channel-lark
 
-      # 9. 打包
+      # 9. strip（减小体积）
+      - name: Strip binary
+        run: |
+          TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+          $TOOLCHAIN/bin/llvm-strip target/armv7-linux-androideabi/release/* || true
+
+      # 10. 打包
       - name: Package binary
         run: |
           mkdir -p output
           cp target/armv7-linux-androideabi/release/* output/ || true
           tar -czf android-armv7-termux.tar.gz -C output .
 
-      # 10. 上传
+      # 11. 上传
       - uses: actions/upload-artifact@v4
         with:
           name: android-armv7-termux
